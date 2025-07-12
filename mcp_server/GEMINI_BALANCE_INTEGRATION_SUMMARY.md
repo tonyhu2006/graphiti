@@ -30,12 +30,12 @@
 #### 环境变量配置 (`.env`)
 ```env
 # Google Gemini API Configuration
-GOOGLE_API_KEY=Hjd-961207hjd
+GOOGLE_API_KEY=your_gemini_balance_access_token
 MODEL_NAME=gemini-2.5-flash
 EMBEDDER_MODEL_NAME=embedding-001
 
 # Gemini Balance代理配置
-GEMINI_BALANCE_URL=http://84.8.145.89:8000
+GEMINI_BALANCE_URL=http://localhost:8000
 ```
 
 #### 示例代码更新 (`examples/quickstart/quickstart_neo4j.py`)
@@ -85,7 +85,7 @@ GEMINI_BALANCE_URL=http://84.8.145.89:8000
 ```bash
 # 设置环境变量
 export GOOGLE_API_KEY=your_balance_access_token
-export GEMINI_BALANCE_URL=http://84.8.145.89:8000
+export GEMINI_BALANCE_URL=http://localhost:8000
 ```
 
 ### 2. 运行MCP服务器

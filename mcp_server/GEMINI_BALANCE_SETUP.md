@@ -25,7 +25,7 @@ MODEL_NAME=gemini-2.5-flash
 EMBEDDER_MODEL_NAME=embedding-001
 
 # Gemini Balance代理配置
-GEMINI_BALANCE_URL=http://84.8.145.89:8000
+GEMINI_BALANCE_URL=http://localhost:8000
 ```
 
 **重要说明：**
@@ -43,7 +43,7 @@ python test_gemini_balance.py
 
 成功输出应该显示：
 ```
-✅ 使用Gemini Balance代理: http://84.8.145.89:8000
+✅ 使用Gemini Balance代理: http://localhost:8000
 ✅ GeminiClient创建成功
 ✅ 文本生成成功
 ✅ GeminiEmbedder创建成功
@@ -79,7 +79,7 @@ from graphiti_core.llm_client.config import LLMConfig
 config = LLMConfig(
     api_key="your_balance_access_token",
     model="gemini-2.5-flash",
-    base_url="http://84.8.145.89:8000"  # Gemini Balance URL
+    base_url="http://localhost:8000"  # Gemini Balance URL
 )
 
 client = GeminiClient(config=config)
@@ -96,7 +96,7 @@ from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
 config = GeminiEmbedderConfig(
     api_key="your_balance_access_token",
     embedding_model="embedding-001",
-    base_url="http://84.8.145.89:8000"
+    base_url="http://localhost:8000"
 )
 
 embedder = GeminiEmbedder(config=config)
@@ -184,7 +184,7 @@ embedder = GeminiEmbedder(config=config)
 config = LLMConfig(
     api_key="your_token",
     model="gemini-2.5-flash",
-    base_url="http://84.8.145.89:8000",
+    base_url="http://localhost:8000",
     # 注意：超时设置需要在HTTP客户端层面配置
 )
 ```
