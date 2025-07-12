@@ -81,7 +81,7 @@ DEFAULT_GEMINI_EMBEDDER_MODEL = 'embedding-001'
 # Semaphore limit for concurrent Graphiti operations.
 # Decrease this if you're experiencing 429 rate limit errors from your LLM provider.
 # Increase if you have high rate limits.
-SEMAPHORE_LIMIT = int(os.getenv('SEMAPHORE_LIMIT', 5))
+SEMAPHORE_LIMIT = int(os.getenv('SEMAPHORE_LIMIT', 2))
 
 
 def is_gemini_model(model_name: str) -> bool:
