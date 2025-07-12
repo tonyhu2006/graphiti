@@ -12,6 +12,10 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, TypedDict, cast
 
+# 添加项目根目录到路径的最前面，确保使用本地开发版本
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -246,6 +250,7 @@ class GraphitiLLMConfig(BaseModel):
     model: str = DEFAULT_LLM_MODEL
     small_model: str = SMALL_LLM_MODEL
     temperature: float = 0.0
+    base_url: str | None = None  # Support for custom endpoints like Gemini Balance
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -261,6 +266,9 @@ class GraphitiLLMConfig(BaseModel):
         # Get small_model from environment, or use default if not set or empty
         small_model_env = os.environ.get('SMALL_MODEL_NAME', '')
         small_model = small_model_env if small_model_env.strip() else SMALL_LLM_MODEL
+
+        # Get base_url for custom endpoints like Gemini Balance
+        base_url = os.environ.get('GEMINI_BALANCE_URL') or os.environ.get('BASE_URL')
 
         azure_openai_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', None)
         azure_openai_api_version = os.environ.get('AZURE_OPENAI_API_VERSION', None)
@@ -297,6 +305,7 @@ class GraphitiLLMConfig(BaseModel):
                 model=model,
                 small_model=small_model,
                 temperature=float(os.environ.get('LLM_TEMPERATURE', '0.0')),
+                base_url=base_url,
             )
         else:
             # Setup for Azure OpenAI API
@@ -403,7 +412,10 @@ class GraphitiLLMConfig(BaseModel):
                 raise ValueError('GOOGLE_API_KEY must be set when using Gemini models')
 
             llm_client_config = LLMConfig(
-                api_key=self.api_key, model=self.model, small_model=self.small_model
+                api_key=self.api_key,
+                model=self.model,
+                small_model=self.small_model,
+                base_url=self.base_url
             )
             llm_client_config.temperature = self.temperature
 
@@ -431,6 +443,7 @@ class GraphitiEmbedderConfig(BaseModel):
 
     model: str = DEFAULT_EMBEDDER_MODEL
     api_key: str | None = None
+    base_url: str | None = None  # Support for custom endpoints like Gemini Balance
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -488,9 +501,13 @@ class GraphitiEmbedderConfig(BaseModel):
             else:
                 api_key = os.environ.get('OPENAI_API_KEY')
 
+            # Get base_url for custom endpoints like Gemini Balance
+            base_url = os.environ.get('GEMINI_BALANCE_URL') or os.environ.get('BASE_URL')
+
             return cls(
                 model=model,
                 api_key=api_key,
+                base_url=base_url,
             )
 
     def create_client(self) -> EmbedderClient | None:
@@ -533,7 +550,11 @@ class GraphitiEmbedderConfig(BaseModel):
                     logger.error('GOOGLE_API_KEY must be set when using Gemini embedding models')
                     return None
 
-                embedder_config = GeminiEmbedderConfig(api_key=self.api_key, embedding_model=self.model)
+                embedder_config = GeminiEmbedderConfig(
+                    api_key=self.api_key,
+                    embedding_model=self.model,
+                    base_url=self.base_url
+                )
                 return GeminiEmbedder(config=embedder_config)
 
             # Default to OpenAI API setup

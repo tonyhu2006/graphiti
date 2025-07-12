@@ -72,22 +72,49 @@ async def main():
     # functionality
     #################################################
 
-    # Initialize Graphiti with Gemini clients
-    graphiti = Graphiti(
-        neo4j_uri,
-        neo4j_user,
-        neo4j_password,
-        llm_client=GeminiClient(
-            config=LLMConfig(
-                api_key=api_key,
-                model="gemini-2.5-flash"
+    # Check if using Gemini Balance proxy
+    gemini_balance_url = os.environ.get('GEMINI_BALANCE_URL')
+
+    if gemini_balance_url:
+        # Initialize Graphiti with Gemini Balance proxy
+        logger.info(f"Using Gemini Balance proxy: {gemini_balance_url}")
+        graphiti = Graphiti(
+            neo4j_uri,
+            neo4j_user,
+            neo4j_password,
+            llm_client=GeminiClient(
+                config=LLMConfig(
+                    api_key=api_key,
+                    model="gemini-2.5-flash",
+                    base_url=gemini_balance_url
+                )
+            ),
+            embedder=GeminiEmbedder(
+                config=GeminiEmbedderConfig(
+                    api_key=api_key,
+                    embedding_model="embedding-001",
+                    base_url=gemini_balance_url
+                )
             )
-        ),
-        embedder=GeminiEmbedder(
-            config=GeminiEmbedderConfig(
-                api_key=api_key,
-                embedding_model="embedding-001"
-            )
+        )
+    else:
+        # Initialize Graphiti with direct Gemini API
+        logger.info("Using direct Gemini API")
+        graphiti = Graphiti(
+            neo4j_uri,
+            neo4j_user,
+            neo4j_password,
+            llm_client=GeminiClient(
+                config=LLMConfig(
+                    api_key=api_key,
+                    model="gemini-2.5-flash"
+                )
+            ),
+            embedder=GeminiEmbedder(
+                config=GeminiEmbedderConfig(
+                    api_key=api_key,
+                    embedding_model="embedding-001"
+                )
         ),
         cross_encoder=GeminiRerankerClient(
             config=LLMConfig(

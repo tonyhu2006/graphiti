@@ -19,6 +19,7 @@ import logging
 import typing
 from typing import TYPE_CHECKING, ClassVar
 
+import aiohttp
 from pydantic import BaseModel
 
 from ..prompts.models import Message
@@ -96,12 +97,112 @@ class GeminiClient(LLMClient):
         self.model = config.model
 
         if client is None:
-            self.client = genai.Client(api_key=config.api_key)
+            # Check if base_url is provided for custom endpoints (like Gemini Balance)
+            if config.base_url:
+                # For custom endpoints, we'll use a different approach
+                # Store the base_url for later use in API calls
+                self.base_url = config.base_url
+                self.use_custom_endpoint = True
+                # Still create a genai client for fallback, but we'll override the API calls
+                self.client = genai.Client(api_key=config.api_key)
+            else:
+                self.base_url = None
+                self.use_custom_endpoint = False
+                self.client = genai.Client(api_key=config.api_key)
         else:
             self.client = client
+            self.base_url = getattr(config, 'base_url', None)
+            self.use_custom_endpoint = bool(self.base_url)
 
         self.max_tokens = max_tokens
         self.thinking_config = thinking_config
+
+    async def _call_custom_endpoint(
+        self,
+        messages: list[Message],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        response_model: type[BaseModel] | None = None,
+    ) -> dict[str, typing.Any]:
+        """
+        Call a custom endpoint (like Gemini Balance) using OpenAI-compatible API format.
+
+        Args:
+            messages: List of messages to send
+            model: Model name to use
+            temperature: Temperature for generation
+            max_tokens: Maximum tokens to generate
+            response_model: Optional Pydantic model for structured output
+
+        Returns:
+            Response dictionary
+        """
+        # Convert Graphiti messages to OpenAI format
+        openai_messages = []
+        system_message = None
+
+        for message in messages:
+            if message.role == "system":
+                system_message = message.content
+            else:
+                openai_messages.append({
+                    "role": message.role,
+                    "content": message.content
+                })
+
+        # If we have a system message, add it as the first message
+        if system_message:
+            openai_messages.insert(0, {
+                "role": "system",
+                "content": system_message
+            })
+
+        # Prepare the request payload
+        payload = {
+            "model": model,
+            "messages": openai_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        # Add response format for structured output
+        if response_model:
+            payload["response_format"] = {"type": "json_object"}
+
+        # Make the API call
+        headers = {
+            "Authorization": f"Bearer {self.config.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        # Use the OpenAI-compatible endpoint
+        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"API call failed with status {response.status}: {error_text}")
+
+                result = await response.json()
+
+                # Extract the content from OpenAI format response
+                if "choices" in result and len(result["choices"]) > 0:
+                    content = result["choices"][0]["message"]["content"]
+
+                    # Try to parse as JSON if response_model is specified
+                    if response_model:
+                        try:
+                            parsed_content = json.loads(content)
+                            return parsed_content
+                        except json.JSONDecodeError:
+                            # If JSON parsing fails, return the raw content
+                            return {"content": content}
+                    else:
+                        return {"content": content}
+                else:
+                    raise Exception("No valid response received from API")
 
     def _check_safety_blocks(self, response) -> None:
         """Check if response was blocked for safety reasons and raise appropriate exceptions."""
@@ -170,6 +271,20 @@ class GeminiClient(LLMClient):
             Exception: If there is an error generating the response or content is blocked.
         """
         try:
+            # Get the appropriate model for the requested size
+            model = self._get_model_for_size(model_size)
+
+            # Check if we should use custom endpoint
+            if self.use_custom_endpoint and self.base_url:
+                return await self._call_custom_endpoint(
+                    messages=messages,
+                    model=model,
+                    temperature=self.temperature,
+                    max_tokens=max_tokens or self.max_tokens,
+                    response_model=response_model,
+                )
+
+            # Original Gemini API implementation
             gemini_messages: typing.Any = []
             # If a response model is provided, add schema for structured output
             system_prompt = ''
@@ -195,9 +310,6 @@ class GeminiClient(LLMClient):
                 gemini_messages.append(
                     types.Content(role=m.role, parts=[types.Part.from_text(text=m.content)])
                 )
-
-            # Get the appropriate model for the requested size
-            model = self._get_model_for_size(model_size)
 
             # Create generation config
             generation_config = types.GenerateContentConfig(
