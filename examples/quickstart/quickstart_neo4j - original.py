@@ -1,4 +1,3 @@
-
 """
 Copyright 2025, Zep Software, Inc.
 
@@ -25,9 +24,6 @@ from logging import INFO
 from dotenv import load_dotenv
 
 from graphiti_core import Graphiti
-from graphiti_core.llm_client.gemini_client import GeminiClient, LLMConfig
-from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
-from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerClient
 from graphiti_core.nodes import EpisodeType
 from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
 
@@ -54,14 +50,9 @@ neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
 neo4j_user = os.environ.get('NEO4J_USER', 'neo4j')
 neo4j_password = os.environ.get('NEO4J_PASSWORD', 'password')
 
-# Google API key configuration
-api_key = os.environ.get('GOOGLE_API_KEY', '<YOUR_API_KEY>')
-
 if not neo4j_uri or not neo4j_user or not neo4j_password:
     raise ValueError('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set')
 
-if not api_key or api_key == '<YOUR_API_KEY>':
-    raise ValueError('GOOGLE_API_KEY must be set')
 
 async def main():
     #################################################
@@ -72,30 +63,8 @@ async def main():
     # functionality
     #################################################
 
-    # Initialize Graphiti with Gemini clients
-    graphiti = Graphiti(
-        neo4j_uri,
-        neo4j_user,
-        neo4j_password,
-        llm_client=GeminiClient(
-            config=LLMConfig(
-                api_key=api_key,
-                model="gemini-2.5-flash"
-            )
-        ),
-        embedder=GeminiEmbedder(
-            config=GeminiEmbedderConfig(
-                api_key=api_key,
-                embedding_model="embedding-001"
-            )
-        ),
-        cross_encoder=GeminiRerankerClient(
-            config=LLMConfig(
-                api_key=api_key,
-                model="gemini-2.5-flash"
-            )
-        )
-    )
+    # Initialize Graphiti with Neo4j connection
+    graphiti = Graphiti(neo4j_uri, neo4j_user, neo4j_password)
 
     try:
         # Initialize the graph database with graphiti's indices. This only needs to be done once.

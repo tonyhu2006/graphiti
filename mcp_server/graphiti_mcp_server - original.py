@@ -32,23 +32,10 @@ from graphiti_core.llm_client.openai_client import OpenAIClient
 try:
     from graphiti_core.llm_client.gemini_client import GeminiClient
     from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
+    from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerClient
     GEMINI_AVAILABLE = True
-
-    # Try to import GeminiRerankerClient, but make it optional
-    try:
-        from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerClient
-        GEMINI_RERANKER_AVAILABLE = True
-    except ImportError:
-        GEMINI_RERANKER_AVAILABLE = False
-        GeminiRerankerClient = None
-
 except ImportError:
     GEMINI_AVAILABLE = False
-    GEMINI_RERANKER_AVAILABLE = False
-    GeminiClient = None
-    GeminiEmbedder = None
-    GeminiEmbedderConfig = None
-    GeminiRerankerClient = None
 from graphiti_core.nodes import EpisodeType, EpisodicNode
 from graphiti_core.search.search_config_recipes import (
     NODE_HYBRID_SEARCH_NODE_DISTANCE,
@@ -56,17 +43,8 @@ from graphiti_core.search.search_config_recipes import (
 )
 from graphiti_core.search.search_filters import SearchFilters
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data
-from graphiti_core.cross_encoder.client import CrossEncoderClient
 
 load_dotenv()
-
-
-class DummyCrossEncoderClient(CrossEncoderClient):
-    """Dummy cross encoder client that returns passages in original order."""
-
-    async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
-        """Return passages in original order with equal scores."""
-        return [(passage, 1.0) for passage in passages]
 
 
 DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
@@ -394,22 +372,6 @@ class GraphitiLLMConfig(BaseModel):
             else:
                 raise ValueError('OPENAI_API_KEY must be set when using Azure OpenAI API')
 
-        # Check if this is a Gemini model
-        if is_gemini_model(self.model):
-            if not GEMINI_AVAILABLE:
-                raise ValueError('Gemini support not available. Install with: pip install "graphiti-core[google-genai]"')
-
-            if not self.api_key:
-                raise ValueError('GOOGLE_API_KEY must be set when using Gemini models')
-
-            llm_client_config = LLMConfig(
-                api_key=self.api_key, model=self.model, small_model=self.small_model
-            )
-            llm_client_config.temperature = self.temperature
-
-            return GeminiClient(config=llm_client_config)
-
-        # Default to OpenAI
         if not self.api_key:
             raise ValueError('OPENAI_API_KEY must be set when using OpenAI API')
 
@@ -482,15 +444,9 @@ class GraphitiEmbedderConfig(BaseModel):
                 azure_openai_deployment_name=azure_openai_deployment_name,
             )
         else:
-            # Determine API key based on model type
-            if model and model.startswith('embedding'):  # Gemini embedding models
-                api_key = os.environ.get('GOOGLE_API_KEY')
-            else:
-                api_key = os.environ.get('OPENAI_API_KEY')
-
             return cls(
                 model=model,
-                api_key=api_key,
+                api_key=os.environ.get('OPENAI_API_KEY'),
             )
 
     def create_client(self) -> EmbedderClient | None:
@@ -523,20 +479,7 @@ class GraphitiEmbedderConfig(BaseModel):
                 logger.error('OPENAI_API_KEY must be set when using Azure OpenAI API')
                 return None
         else:
-            # Check if this is a Gemini embedding model
-            if self.model and self.model.startswith('embedding'):  # Gemini embedding models
-                if not GEMINI_AVAILABLE:
-                    logger.error('Gemini support not available. Install with: pip install "graphiti-core[google-genai]"')
-                    return None
-
-                if not self.api_key:
-                    logger.error('GOOGLE_API_KEY must be set when using Gemini embedding models')
-                    return None
-
-                embedder_config = GeminiEmbedderConfig(api_key=self.api_key, embedding_model=self.model)
-                return GeminiEmbedder(config=embedder_config)
-
-            # Default to OpenAI API setup
+            # OpenAI API setup
             if not self.api_key:
                 return None
 
@@ -685,32 +628,6 @@ async def initialize_graphiti():
 
         embedder_client = config.embedder.create_client()
 
-        # Create cross encoder client
-        cross_encoder_client = None
-        if is_gemini_model(config.llm.model):
-            # For Gemini models, try to use Gemini reranker if available
-            if GEMINI_RERANKER_AVAILABLE and GeminiRerankerClient is not None and config.llm.api_key:
-                from graphiti_core.llm_client.config import LLMConfig
-                cross_encoder_config = LLMConfig(
-                    api_key=config.llm.api_key,
-                    model="gemini-2.0-flash-exp"  # Use optimized model for reranking
-                )
-                cross_encoder_client = GeminiRerankerClient(config=cross_encoder_config)
-            else:
-                # If Gemini reranker not available, use dummy cross encoder
-                cross_encoder_client = DummyCrossEncoderClient()
-        else:
-            # For non-Gemini models, use OpenAI reranker if API key is available
-            openai_api_key = os.environ.get('OPENAI_API_KEY')
-            if openai_api_key:
-                from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
-                from graphiti_core.llm_client.config import LLMConfig
-                cross_encoder_config = LLMConfig(api_key=openai_api_key, model="gpt-4.1-nano")
-                cross_encoder_client = OpenAIRerankerClient(config=cross_encoder_config)
-            else:
-                # If no OpenAI API key, use dummy cross encoder
-                cross_encoder_client = DummyCrossEncoderClient()
-
         # Initialize Graphiti client
         graphiti_client = Graphiti(
             uri=config.neo4j.uri,
@@ -718,7 +635,6 @@ async def initialize_graphiti():
             password=config.neo4j.password,
             llm_client=llm_client,
             embedder=embedder_client,
-            cross_encoder=cross_encoder_client,
             max_coroutines=SEMAPHORE_LIMIT,
         )
 
@@ -733,14 +649,8 @@ async def initialize_graphiti():
 
         # Log configuration details for transparency
         if llm_client:
-            model_type = "Gemini" if is_gemini_model(config.llm.model) else "OpenAI"
-            logger.info(f'Using {model_type} model: {config.llm.model}')
+            logger.info(f'Using OpenAI model: {config.llm.model}')
             logger.info(f'Using temperature: {config.llm.temperature}')
-            if embedder_client:
-                embedder_type = "Gemini" if config.embedder.model and config.embedder.model.startswith('embedding') else "OpenAI"
-                logger.info(f'Using {embedder_type} embedder: {config.embedder.model}')
-            if cross_encoder_client:
-                logger.info('Using Gemini cross encoder for reranking')
         else:
             logger.info('No LLM client configured - entity extraction will be limited')
 

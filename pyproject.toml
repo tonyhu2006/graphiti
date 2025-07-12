@@ -94,3 +94,11 @@ typeCheckingMode = "basic"
 [[tool.pyright.overrides]]
 include = ["**/falkordb*"]
 reportMissingImports = false
+
+[tool.uv.sources]
+graphiti-core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "graphiti-core[google-genai]",
+]
